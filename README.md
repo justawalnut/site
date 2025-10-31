@@ -212,5 +212,3 @@ npm run db:seed      # Seed database
 - **Backups**: Supabase auto-backup or manual pg_dump
 
 ---
-
-Built with ❤️ for Mr. Walnut's trading ops team.
