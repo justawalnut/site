@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   eachDayOfInterval,
   endOfMonth,
@@ -103,11 +104,14 @@ async function getPnlData(month: number, year: number) {
 type PnlSearchParams = {
   month?: string;
   year?: string;
+  detailsPage?: string;
 };
 
 interface PnlPageProps {
   searchParams?: PnlSearchParams | Promise<PnlSearchParams>;
 }
+
+const DAYS_PER_PAGE = 10;
 
 export default async function PnlPage({ searchParams }: PnlPageProps) {
   const today = new Date();
@@ -126,11 +130,20 @@ export default async function PnlPage({ searchParams }: PnlPageProps) {
     return Number.isNaN(value) ? currentYear : value;
   })();
 
+  const detailsPage = Math.max(1, Number(resolvedSearchParams?.detailsPage) || 1);
+
   const { calendarDays, tableDays, monthLabel } = await getPnlData(selectedMonth, selectedYear);
   const intensities = calendarDays
     .filter((day) => day.net !== null)
     .map((day) => Math.abs(day.net ?? 0));
   const maxAbsNet = Math.max(1, ...intensities);
+  const hasAnyData = tableDays.length > 0;
+
+  const totalDetailsPages = Math.ceil(tableDays.length / DAYS_PER_PAGE);
+  const paginatedTableDays = tableDays.slice(
+    (detailsPage - 1) * DAYS_PER_PAGE,
+    detailsPage * DAYS_PER_PAGE
+  );
 
   const monthNames = [
     "January",
@@ -198,6 +211,14 @@ export default async function PnlPage({ searchParams }: PnlPageProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!hasAnyData && (
+            <div className="mb-4 rounded-lg border border-dashed border-border/60 bg-muted/20 p-6 text-center">
+              <p className="text-sm font-medium text-muted-foreground">No PnL data for this month</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Data will appear once daily PnL is ingested via the API
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase text-muted-foreground">
             {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((weekday) => (
               <span key={weekday}>{weekday}</span>
@@ -274,7 +295,14 @@ export default async function PnlPage({ searchParams }: PnlPageProps) {
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>Daily PnL details</CardTitle>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <CardTitle>Daily PnL details</CardTitle>
+            {tableDays.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {tableDays.length} days with data
+              </p>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <details className="group space-y-4 rounded-lg border border-dashed border-primary/40 p-4">
@@ -287,7 +315,8 @@ export default async function PnlPage({ searchParams }: PnlPageProps) {
                   No PnL entries for this month yet.
                 </p>
               ) : (
-                tableDays.map((day) => (
+                <>
+                  {paginatedTableDays.map((day) => (
                   <div key={day.date} className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold">
@@ -348,7 +377,43 @@ export default async function PnlPage({ searchParams }: PnlPageProps) {
                       </table>
                     </div>
                   </div>
-                ))
+                  ))}
+                  {totalDetailsPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 pt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        asChild
+                        disabled={detailsPage === 1}
+                      >
+                        {detailsPage === 1 ? (
+                          <span className="cursor-not-allowed opacity-50">Previous</span>
+                        ) : (
+                          <Link href={`/pnl?month=${selectedMonth}&year=${selectedYear}&detailsPage=${detailsPage - 1}`}>
+                            Previous
+                          </Link>
+                        )}
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        Page {detailsPage} of {totalDetailsPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        asChild
+                        disabled={detailsPage === totalDetailsPages}
+                      >
+                        {detailsPage === totalDetailsPages ? (
+                          <span className="cursor-not-allowed opacity-50">Next</span>
+                        ) : (
+                          <Link href={`/pnl?month=${selectedMonth}&year=${selectedYear}&detailsPage=${detailsPage + 1}`}>
+                            Next
+                          </Link>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </details>

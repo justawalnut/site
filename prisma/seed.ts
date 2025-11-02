@@ -2,6 +2,11 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+function deterministic(seed: number) {
+  const value = Math.sin(seed) * 10000
+  return value - Math.floor(value)
+}
+
 async function main() {
   console.log('🌱 Seeding database...')
 
@@ -158,7 +163,7 @@ async function main() {
       price: 71000.0,
       fees: 1.5,
       venue: 'binance',
-      tags: JSON.stringify(['breakout', 'ATR2x']),
+      tags: ['breakout', 'ATR2x'],
       extTradeId: 'hv-e2-trade-001',
     },
     {
@@ -170,7 +175,7 @@ async function main() {
       price: 71500.0,
       fees: 1.5,
       venue: 'binance',
-      tags: JSON.stringify(['profit-take']),
+      tags: ['profit-take'],
       extTradeId: 'hv-e2-trade-002',
     },
     {
@@ -182,7 +187,7 @@ async function main() {
       price: 3500.0,
       fees: 2.0,
       venue: 'binance',
-      tags: JSON.stringify(['arb-opportunity']),
+      tags: ['arb-opportunity'],
       extTradeId: 'arb-1-trade-001',
     },
     {
@@ -194,7 +199,7 @@ async function main() {
       price: 3520.0,
       fees: 2.0,
       venue: 'uniswap',
-      tags: JSON.stringify(['arb-close']),
+      tags: ['arb-close'],
       extTradeId: 'arb-1-trade-002',
     },
   ]
@@ -214,8 +219,8 @@ async function main() {
     date.setDate(date.getDate() + i)
 
     // HV-E2 PnL (staging, gradually improving)
-    const hvE2GrossPnl = 5000 + Math.random() * 10000 + i * 200
-    const hvE2Fees = 200 + Math.random() * 100
+    const hvE2GrossPnl = 5000 + deterministic(i + 1) * 10000 + i * 200
+    const hvE2Fees = 200 + deterministic(i + 101) * 100
     await prisma.dailyPnl.upsert({
       where: {
         d_strategyId: {
@@ -230,14 +235,14 @@ async function main() {
         grossPnl: hvE2GrossPnl,
         fees: hvE2Fees,
         netPnl: hvE2GrossPnl - hvE2Fees,
-        dd: -2.5 - Math.random() * 2,
-        exposure: 0.3 + Math.random() * 0.2,
+        dd: -2.5 - deterministic(i + 201) * 2,
+        exposure: 0.3 + deterministic(i + 301) * 0.2,
       },
     })
 
     // Arb-1 PnL (live, stable profits)
-    const arb1GrossPnl = 8000 + Math.random() * 5000
-    const arb1Fees = 150 + Math.random() * 50
+    const arb1GrossPnl = 8000 + deterministic(i + 401) * 5000
+    const arb1Fees = 150 + deterministic(i + 501) * 50
     await prisma.dailyPnl.upsert({
       where: {
         d_strategyId: {
@@ -252,8 +257,8 @@ async function main() {
         grossPnl: arb1GrossPnl,
         fees: arb1Fees,
         netPnl: arb1GrossPnl - arb1Fees,
-        dd: -1.0 - Math.random(),
-        exposure: 0.4 + Math.random() * 0.1,
+        dd: -1.0 - deterministic(i + 601),
+        exposure: 0.4 + deterministic(i + 701) * 0.1,
       },
     })
   }

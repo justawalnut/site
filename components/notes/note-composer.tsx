@@ -38,24 +38,81 @@ export function NoteComposer() {
     content: "",
   });
   const [attachment, setAttachment] = useState<{
-    dataUrl: string | null;
-    fileName: string | null;
-  }>({ dataUrl: null, fileName: null });
+    path: string;
+    url: string;
+    fileName: string;
+  } | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
 
-  function handleAttachment(file?: File | null) {
+  async function discardAttachment(path: string) {
+    try {
+      await fetch("/api/notes/attachments", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ path }),
+      });
+    } catch (error) {
+      console.warn("Failed to discard attachment", error);
+    }
+  }
+
+  async function handleAttachment(file?: File | null) {
     if (!file) {
-      setAttachment({ dataUrl: null, fileName: null });
+      if (attachment) {
+        await discardAttachment(attachment.path);
+      }
+      setAttachment(null);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
+    if (file.size > 2_000_000) {
+      setFeedback({
+        status: "error",
+        message: "Attachments are limited to 2 MB. Pick a smaller image.",
+      });
+      return;
+    }
+
+    if (attachment) {
+      await discardAttachment(attachment.path);
+      setAttachment(null);
+    }
+
+    setFeedback({ status: "idle", message: "" });
+    setIsUploadingAttachment(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+
+      const response = await fetch("/api/notes/attachments", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        const message =
+          data?.error ??
+          "Upload failed — please retry or pick a different image.";
+        setFeedback({ status: "error", message });
+        return;
+      }
+
       setAttachment({
-        dataUrl: typeof reader.result === "string" ? reader.result : null,
+        path: data.path,
+        url: data.url,
         fileName: file.name,
       });
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      setFeedback({
+        status: "error",
+        message: "Upload failed — check your connection and retry.",
+      });
+    } finally {
+      setIsUploadingAttachment(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -70,8 +127,11 @@ export function NoteComposer() {
       tag: form.tag,
     };
 
-    if (attachment.dataUrl) {
-      payload.attachment = attachment.dataUrl;
+    if (attachment) {
+      payload.attachment = {
+        path: attachment.path,
+        url: attachment.url,
+      };
     }
 
     startTransition(async () => {
@@ -104,7 +164,7 @@ export function NoteComposer() {
           content: "",
           tag: prev.tag,
         }));
-        setAttachment({ dataUrl: null, fileName: null });
+        setAttachment(null);
 
         router.refresh();
       } catch {
@@ -178,7 +238,10 @@ export function NoteComposer() {
                 onChange={(event) => handleAttachment(event.target.files?.[0] ?? null)}
                 className="text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-1 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent hover:file:text-accent-foreground"
               />
-              {attachment.dataUrl && (
+              {isUploadingAttachment && (
+                <p className="text-xs text-muted-foreground">Uploading attachment…</p>
+              )}
+              {attachment && (
                 <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
                   <span className="truncate">{attachment.fileName}</span>
                   <Button
@@ -192,10 +255,10 @@ export function NoteComposer() {
                   </Button>
                 </div>
               )}
-              {attachment.dataUrl && (
+              {attachment && (
                 <div className="overflow-hidden rounded-md border border-border/60">
                   <Image
-                    src={attachment.dataUrl}
+                    src={attachment.url}
                     alt="Attachment preview"
                     className="max-h-48 w-full object-contain"
                     width={800}
@@ -226,9 +289,9 @@ export function NoteComposer() {
           <Button
             type="submit"
             className="w-full"
-            disabled={isPending}
+            disabled={isPending || isUploadingAttachment}
           >
-            {isPending ? "Posting…" : "Post note"}
+            {isPending ? "Posting…" : isUploadingAttachment ? "Waiting for upload…" : "Post note"}
           </Button>
         </form>
       </CardContent>

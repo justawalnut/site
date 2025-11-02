@@ -3,28 +3,42 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import {
+  StorageConfigError,
+  uploadAttachmentFromDataUrl,
+} from "@/lib/storage";
 
 const TAG_OPTIONS = ["daily-rhythm", "strategy-threads", "trade-notes", "infra"] as const;
+
+const attachmentPayloadSchema = z
+  .union([
+    z
+      .object({
+        path: z.string().min(1, "Attachment path missing"),
+        url: z.string().url("Attachment URL must be valid"),
+      })
+      .strict(),
+    z
+      .string()
+      .trim()
+      .max(2_000_000, "Attachment is too large")
+      .refine(
+        (value) =>
+          value.startsWith("data:image/") ||
+          value.startsWith("http://") ||
+          value.startsWith("https://"),
+        "Provide an image URL or data URL"
+      ),
+    z.null(),
+  ])
+  .optional();
 
 const payloadSchema = z.object({
   name: z.string().min(2, "Name is required"),
   content: z.string().min(1, "Add at least one character"),
   tag: z.enum(TAG_OPTIONS).optional(),
   parentId: z.number().int().positive().optional(),
-  attachment: z
-    .string()
-    .trim()
-    .max(2_000_000, "Attachment is too large")
-    .optional()
-    .nullable()
-    .refine(
-      (value) =>
-        !value ||
-        value.startsWith("data:image/") ||
-        value.startsWith("http://") ||
-        value.startsWith("https://"),
-      "Provide an image URL or data URL"
-    ),
+  attachment: attachmentPayloadSchema,
 });
 
 function slugify(value: string) {
@@ -118,13 +132,29 @@ export async function POST(request: Request) {
       noteTag = "infra";
     }
 
+    let attachmentResult:
+      | { url?: string; path?: string }
+      | undefined;
+    try {
+      attachmentResult = await resolveAttachment(attachment);
+    } catch (error) {
+      if (error instanceof StorageConfigError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 503 }
+        );
+      }
+      throw error;
+    }
+
     const note = await prisma.note.create({
       data: {
         authorId: author.id,
         scope: noteScope,
         scopeRef: noteScopeRef,
         tag: noteTag,
-        attachmentUrl: attachment ?? undefined,
+        attachmentUrl: attachmentResult?.url,
+        attachmentPath: attachmentResult?.path,
         content: content.trim(),
         strategyId: noteStrategyId,
         parentNoteId,
@@ -186,5 +216,28 @@ function deriveScopeFromTag(tag: (typeof TAG_OPTIONS)[number]) {
   return {
     scope: "trade" as const,
     scopeRef: "trade:general",
+  };
+}
+
+type AttachmentInput = z.infer<typeof attachmentPayloadSchema>;
+
+async function resolveAttachment(input: AttachmentInput) {
+  if (!input) {
+    return undefined;
+  }
+
+  if (typeof input === "string") {
+    if (input.startsWith("data:image/")) {
+      return uploadAttachmentFromDataUrl(input);
+    }
+    if (input.startsWith("http://") || input.startsWith("https://")) {
+      return { url: input, path: undefined };
+    }
+    throw new Error("Unsupported attachment format");
+  }
+
+  return {
+    url: input.url,
+    path: input.path,
   };
 }

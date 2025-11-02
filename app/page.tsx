@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import {
   Card,
@@ -9,57 +10,131 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { format, startOfDay, subDays } from "date-fns";
 
-async function getHomeData() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+type StrategyMetricsRow = {
+  strategy_id: string;
+  name: string;
+  status: string;
+  description: string | null;
+  net_pnl_today: number | null;
+  dd_today: number | null;
+  latest_exposure: number | null;
+  readiness_score: number | null;
+  project_notes: string | null;
+  project_id: string | null;
+  decisions_count: bigint | number | null;
+};
 
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+type StrategySummary = {
+  id: string;
+  name: string;
+  status: string;
+  description: string | null;
+  project?: {
+    id: string;
+    readinessScore: number;
+    notes: string | null;
+  };
+};
 
-  const [todayPnl, recentPnl, strategies, decisionsCount] = await Promise.all([
-    prisma.dailyPnl.findMany({
-      where: { d: today },
-      include: { strategy: true },
-    }),
-    prisma.dailyPnl.findMany({
-      where: {
-        d: {
-          gte: sevenDaysAgo,
-        },
-      },
-      include: { strategy: true },
-    }),
-    prisma.strategy.findMany({
-      include: {
-        projects: true,
-      },
-    }),
-    prisma.decision.count(),
-  ]);
+type HomeData = {
+  totalNetPnl: number;
+  totalExposure: number;
+  maxDD: number;
+  strategyAttribution: Array<{ name: string; pnl: number; status: string }>;
+  strategies: StrategySummary[];
+  decisionsCount: number;
+};
 
-  const totalNetPnl = todayPnl.reduce((sum, p) => sum + p.netPnl, 0);
-  const totalExposure = strategies
-    .filter((s) => s.status === "live")
-    .reduce((sum, s) => {
-      const latestPnl = recentPnl
-        .filter((p) => p.strategyId === s.id)
-        .sort((a, b) => b.d.getTime() - a.d.getTime())[0];
-      return sum + (latestPnl?.exposure || 0);
-    }, 0);
+const getHomeData = unstable_cache(async (): Promise<HomeData> => {
+  const today = startOfDay(new Date());
+  const todayStr = format(today, "yyyy-MM-dd");
+  const sevenDaysAgoStr = format(subDays(today, 7), "yyyy-MM-dd");
 
-  const maxDD =
-    todayPnl.length > 0
-      ? Math.min(...todayPnl.map((p) => p.dd || 0), 0)
-      : 0;
+  const strategyMetrics = await prisma.$queryRaw<StrategyMetricsRow[]>`
+    WITH todays AS (
+      SELECT strategy_id, net_pnl, dd
+      FROM daily_pnl
+      WHERE d = ${todayStr}::date
+    ),
+    latest_exposure AS (
+      SELECT DISTINCT ON (strategy_id)
+        strategy_id,
+        exposure
+      FROM daily_pnl
+      WHERE d >= ${sevenDaysAgoStr}::date
+      ORDER BY strategy_id, d DESC
+    )
+    SELECT
+      s.id AS strategy_id,
+      s.name,
+      s.status,
+      s.description,
+      t.net_pnl AS net_pnl_today,
+      t.dd AS dd_today,
+      le.exposure AS latest_exposure,
+      lp.readiness_score,
+      lp.notes AS project_notes,
+      lp.id AS project_id,
+      (SELECT COUNT(*)::bigint FROM decisions) AS decisions_count
+    FROM strategies s
+    LEFT JOIN todays t ON t.strategy_id = s.id
+    LEFT JOIN latest_exposure le ON le.strategy_id = s.id
+    LEFT JOIN LATERAL (
+      SELECT p.id, p.readiness_score, p.notes
+      FROM projects p
+      WHERE p.strategy_id = s.id
+      ORDER BY p.last_updated DESC
+      LIMIT 1
+    ) lp ON TRUE;
+  `;
 
-  const strategyAttribution = todayPnl
-    .map((p) => ({
-      name: p.strategy.name,
-      pnl: p.netPnl,
-      status: p.strategy.status,
+  const decisionsCount =
+    strategyMetrics.length > 0
+      ? Number(strategyMetrics[0].decisions_count ?? 0)
+      : await prisma.decision.count();
+
+  const totalNetPnl = strategyMetrics.reduce(
+    (sum, row) => sum + (row.net_pnl_today ?? 0),
+    0
+  );
+
+  const ddValues = strategyMetrics
+    .map((row) => row.dd_today)
+    .filter((value): value is number => value !== null);
+
+  const maxDD = Math.min(...ddValues, 0);
+
+  const totalExposure = strategyMetrics.reduce((sum, row) => {
+    if (row.status === "live" && row.latest_exposure !== null) {
+      return sum + row.latest_exposure;
+    }
+    return sum;
+  }, 0);
+
+  const strategyAttribution = strategyMetrics
+    .filter((row) => row.net_pnl_today !== null)
+    .map((row) => ({
+      name: row.name,
+      pnl: row.net_pnl_today ?? 0,
+      status: row.status,
     }))
     .sort((a, b) => b.pnl - a.pnl);
+
+  const strategies = strategyMetrics.map<StrategySummary>((row) => ({
+    id: row.strategy_id,
+    name: row.name,
+    status: row.status,
+    description: row.description,
+    project: row.project_id
+      ? {
+          id: row.project_id,
+          readinessScore: row.readiness_score ?? 0,
+          notes: row.project_notes,
+        }
+      : undefined,
+  }));
 
   return {
     totalNetPnl,
@@ -69,19 +144,21 @@ async function getHomeData() {
     strategies,
     decisionsCount,
   };
-}
+}, ["dashboard-home"], {
+  revalidate: 120,
+  tags: ["dashboard-home"],
+});
 
 export default async function Home() {
   const data = await getHomeData();
-  const now = new Date();
   const liveStrategies = data.strategies.filter((s) => s.status === "live");
   const stagingStrategies = data.strategies
     .filter((s) => s.status === "staging")
     .map((strategy) => ({
       id: strategy.id,
       name: strategy.name,
-      readinessScore: strategy.projects[0]?.readinessScore ?? 0,
-      notes: strategy.projects[0]?.notes ?? "",
+      readinessScore: strategy.project?.readinessScore ?? 0,
+      notes: strategy.project?.notes ?? "",
       description: strategy.description ?? "",
     }))
     .sort((a, b) => b.readinessScore - a.readinessScore);
@@ -375,7 +452,7 @@ export default async function Home() {
           <CardContent className="space-y-3">
             {liveStrategies.length > 0 ? (
               liveStrategies.map((strategy) => {
-                const readiness = strategy.projects[0]?.readinessScore ?? 0;
+                const readiness = strategy.project?.readinessScore ?? 0;
                 return (
                   <div
                     key={strategy.id}
@@ -458,7 +535,7 @@ export default async function Home() {
           <CardContent className="space-y-3">
             {rAndDStrategies.length > 0 ? (
               rAndDStrategies.map((strategy) => {
-                const readiness = strategy.projects[0]?.readinessScore ?? 0;
+                const readiness = strategy.project?.readinessScore ?? 0;
                 return (
                   <div
                     key={strategy.id}

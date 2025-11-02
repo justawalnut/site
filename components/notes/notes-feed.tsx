@@ -45,14 +45,14 @@ const tabs = [
   { value: "daily-rhythm", label: "Daily rhythm" },
   { value: "strategy-threads", label: "Strategy threads" },
   { value: "trade-notes", label: "Trade notes" },
-  { value: "infraa", label: "Infra" },
+  { value: "infra", label: "Infra" },
 ];
 
 const tagLabels: Record<string, string> = {
   "daily-rhythm": "Daily rhythm",
   "strategy-threads": "Strategy threads",
   "trade-notes": "Trade notes",
-  infraa: "Infra",
+  infra: "Infra",
 };
 
 function formatTimestamp(timestamp: string) {
@@ -91,33 +91,88 @@ function NoteReplyForm({
   const router = useRouter();
   const [form, setForm] = useState({ name: "", content: "" });
   const [attachment, setAttachment] = useState<{
-    dataUrl: string | null;
-    fileName: string | null;
-  }>({ dataUrl: null, fileName: null });
+    path: string;
+    url: string;
+    fileName: string;
+  } | null>(null);
   const [feedback, setFeedback] = useState<{
     status: "idle" | "error";
     message: string;
   }>({ status: "idle", message: "" });
   const [isPending, startTransition] = useTransition();
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
 
-  function handleAttachment(file?: File | null) {
+  async function discardAttachment(path: string) {
+    try {
+      await fetch("/api/notes/attachments", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+    } catch (error) {
+      console.warn("Failed to discard attachment", error);
+    }
+  }
+
+  async function handleAttachment(file?: File | null) {
     if (!file) {
-      setAttachment({ dataUrl: null, fileName: null });
+      if (attachment) {
+        await discardAttachment(attachment.path);
+      }
+      setAttachment(null);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
+
+    if (file.size > 2_000_000) {
+      setFeedback({
+        status: "error",
+        message: "Attachments are limited to 2 MB.",
+      });
+      return;
+    }
+
+    if (attachment) {
+      await discardAttachment(attachment.path);
+      setAttachment(null);
+    }
+
+    setFeedback({ status: "idle", message: "" });
+    setIsUploadingAttachment(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      const response = await fetch("/api/notes/attachments", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setFeedback({
+          status: "error",
+          message:
+            data?.error ?? "Upload failed — please retry after a moment.",
+        });
+        return;
+      }
       setAttachment({
-        dataUrl: typeof reader.result === "string" ? reader.result : null,
+        path: data.path,
+        url: data.url,
         fileName: file.name,
       });
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      console.error(error);
+      setFeedback({
+        status: "error",
+        message: "Upload failed — check your connection.",
+      });
+    } finally {
+      setIsUploadingAttachment(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isPending) return;
+    if (isPending || isUploadingAttachment) return;
 
     setFeedback({ status: "idle", message: "" });
 
@@ -132,7 +187,12 @@ function NoteReplyForm({
             name: form.name.trim(),
             content: form.content.trim(),
             parentId: noteId,
-            attachment: attachment.dataUrl ?? undefined,
+            attachment: attachment
+              ? {
+                  path: attachment.path,
+                  url: attachment.url,
+                }
+              : undefined,
           }),
         });
 
@@ -147,7 +207,7 @@ function NoteReplyForm({
         }
 
         setForm({ name: "", content: "" });
-        setAttachment({ dataUrl: null, fileName: null });
+        setAttachment(null);
         onSubmitted();
         router.refresh();
       } catch (error) {
@@ -190,7 +250,10 @@ function NoteReplyForm({
           onChange={(event) => handleAttachment(event.target.files?.[0] ?? null)}
           className="text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-1 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent hover:file:text-accent-foreground"
         />
-        {attachment.dataUrl && (
+        {isUploadingAttachment && (
+          <p className="text-xs text-muted-foreground">Uploading attachment…</p>
+        )}
+        {attachment && (
           <div className="space-y-2">
             <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2">
               <span className="truncate">{attachment.fileName}</span>
@@ -206,7 +269,7 @@ function NoteReplyForm({
             </div>
             <div className="overflow-hidden rounded-md border border-border/60">
               <Image
-                src={attachment.dataUrl}
+                src={attachment.url}
                 alt="Attachment preview"
                 className="max-h-48 w-full object-contain"
                 width={800}
@@ -224,10 +287,14 @@ function NoteReplyForm({
         <Button
           type="submit"
           size="sm"
-          disabled={isPending}
+          disabled={isPending || isUploadingAttachment}
           className="px-3"
         >
-          {isPending ? "Sending…" : "Post reply"}
+          {isPending
+            ? "Sending…"
+            : isUploadingAttachment
+              ? "Waiting for upload…"
+              : "Post reply"}
         </Button>
       </div>
     </form>

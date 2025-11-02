@@ -43,6 +43,8 @@ prisma/*.db-journal
 # local tooling & docs
 .claude/
 command.md
+PRD.md
+SKELETON_COMPLETE.md
 
 # local data exports
 pnl_report_30days.csv

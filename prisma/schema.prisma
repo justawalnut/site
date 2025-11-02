@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -106,17 +106,18 @@ model Trade {
   price      Float
   fees       Float    @default(0)
   venue      String?
-  tags       String? // JSON string for SQLite
+  tags       String[] @default([])
   extTradeId String   @unique @map("ext_trade_id") // idempotency key
 
   @@index([ts])
   @@index([strategyId])
+  @@index([strategyId, ts])
   @@map("trades")
 }
 
 model DailyPnl {
   id         Int      @id @default(autoincrement())
-  d          DateTime
+  d          DateTime @db.Date
   strategyId String   @map("strategy_id")
   strategy   Strategy @relation(fields: [strategyId], references: [id])
   grossPnl   Float    @map("gross_pnl")
@@ -127,6 +128,7 @@ model DailyPnl {
 
   @@unique([d, strategyId])
   @@index([d])
+  @@index([strategyId])
   @@map("daily_pnl")
 }
 
@@ -140,6 +142,7 @@ model Note {
   scopeRef   String   @map("scope_ref") // date string, strategy_id, or trade_id
   tag        String?  @map("tag")
   attachmentUrl String? @map("attachment_url")
+  attachmentPath String? @map("attachment_path")
   content    String
   strategyId String?  @map("strategy_id")
   strategy   Strategy? @relation(fields: [strategyId], references: [id])
@@ -147,6 +150,7 @@ model Note {
   parent        Note?  @relation("NoteThread", fields: [parentNoteId], references: [id])
   replies       Note[] @relation("NoteThread")
 
+  @@index([createdAt])
   @@map("notes")
 }
 

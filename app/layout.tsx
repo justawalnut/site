@@ -17,9 +17,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} bg-background text-foreground antialiased`}>
-        <ThemeProvider defaultTheme="dark" storageKey="trading-dashboard-theme">
+        <ThemeProvider defaultTheme="system" storageKey="trading-dashboard-theme">
           <div className="relative flex min-h-screen flex-col bg-background transition-colors">
             <div className="pointer-events-none absolute inset-0 -z-10 opacity-40 blur-3xl">
               <div className="absolute left-1/2 top-[-20%] h-64 w-64 -translate-x-1/2 rounded-full bg-primary/40" />
