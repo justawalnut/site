@@ -73,7 +73,7 @@ function publicUrlFor(supabaseUrl: string, bucket: string, path: string) {
 }
 
 async function uploadArrayBuffer(
-  buffer: ArrayBuffer,
+  buffer: ArrayBuffer | Buffer,
   contentType: string,
   options: { fileName?: string | null } = {}
 ) {
@@ -91,6 +91,8 @@ async function uploadArrayBuffer(
     supabaseUrl
   )
 
+  const bodyData = Buffer.isBuffer(buffer) ? new Uint8Array(buffer) : new Uint8Array(buffer)
+
   const response = await fetch(uploadUrl, {
     method: 'POST',
     headers: {
@@ -98,7 +100,7 @@ async function uploadArrayBuffer(
       'Content-Type': contentType,
       'x-upsert': 'false',
     },
-    body: Buffer.from(buffer),
+    body: bodyData,
   })
 
   if (!response.ok) {

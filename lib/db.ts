@@ -37,19 +37,4 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prismaClient
 }
 
-if (process.env.PRISMA_TELEMETRY === '1') {
-  prismaClient.$on('query', (event) => {
-    console.info('prisma:query', {
-      model: event.target,
-      durationMs: event.duration,
-    })
-  })
-  prismaClient.$on('error', (event) => {
-    console.error('prisma:error', {
-      message: event.message,
-      target: event.target,
-    })
-  })
-}
-
 export const prisma = prismaClient

@@ -116,20 +116,17 @@ export async function POST(request: Request) {
       }
 
       parentNoteId = parentNote.id;
-      noteScope = parentNote.scope;
+      noteScope = parentNote.scope as "day" | "strategy" | "trade";
       noteScopeRef = parentNote.scopeRef;
       noteStrategyId = parentNote.strategyId ?? undefined;
       const parentTag =
         parentNote.tag === "infraa" ? "infra" : parentNote.tag;
-      noteTag = parentTag ?? noteTag;
+      noteTag = (parentTag ?? noteTag) as typeof noteTag;
     } else {
       const derived = deriveScopeFromTag(noteTag);
       noteScope = derived.scope;
       noteScopeRef = derived.scopeRef;
       noteStrategyId = undefined;
-    }
-    if (noteTag === "infraa") {
-      noteTag = "infra";
     }
 
     let attachmentResult:
