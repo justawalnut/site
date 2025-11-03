@@ -42,9 +42,6 @@ export function Navigation() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <span className="hidden text-xs text-muted-foreground lg:inline-flex">
-            Directors & Engineers in sync
-          </span>
           <ThemeToggle />
         </div>
       </div>
