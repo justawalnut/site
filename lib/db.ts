@@ -11,9 +11,16 @@ const pooledUrl =
   process.env.PRISMA_ACCELERATE_URL ??
   process.env.DATABASE_URL
 
-if (!pooledUrl) {
+if (!pooledUrl || pooledUrl.trim() === '') {
+  const availableVars = {
+    DATABASE_URL: process.env.DATABASE_URL ? '✓ set' : '✗ missing',
+    DATABASE_POOL_URL: process.env.DATABASE_POOL_URL ? '✓ set' : '✗ missing',
+    PRISMA_ACCELERATE_URL: process.env.PRISMA_ACCELERATE_URL ? '✓ set' : '✗ missing',
+  }
   throw new Error(
-    'DATABASE_URL (or DATABASE_POOL_URL / PRISMA_ACCELERATE_URL) must be set to initialise PrismaClient.'
+    `DATABASE_URL (or DATABASE_POOL_URL / PRISMA_ACCELERATE_URL) must be set to initialise PrismaClient.\n` +
+    `Environment variables status:\n${JSON.stringify(availableVars, null, 2)}\n` +
+    `Please configure environment variables in your Vercel project settings.`
   )
 }
 
