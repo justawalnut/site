@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { zonedTimeToUtc } from "date-fns-tz";
+import { fromZonedTime } from "date-fns-tz";
 import { format } from "date-fns";
 
 // Validation schema
@@ -67,7 +67,7 @@ function parseDeskDate(date: string, timezone: string) {
     throw new IngestError("Date must be provided as YYYY-MM-DD", 400);
   }
 
-  const zonedMidday = zonedTimeToUtc(`${date}T12:00:00`, timezone);
+  const zonedMidday = fromZonedTime(`${date}T12:00:00`, timezone);
   const isoDay = format(zonedMidday, "yyyy-MM-dd");
   return new Date(`${isoDay}T00:00:00.000Z`);
 }
