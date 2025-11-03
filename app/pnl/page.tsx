@@ -108,7 +108,7 @@ type PnlSearchParams = {
 };
 
 interface PnlPageProps {
-  searchParams?: PnlSearchParams | Promise<PnlSearchParams>;
+  searchParams?: Promise<PnlSearchParams>;
 }
 
 const DAYS_PER_PAGE = 10;

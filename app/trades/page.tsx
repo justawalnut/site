@@ -32,7 +32,7 @@ type TradesSearchParams = {
 };
 
 interface TradesPageProps {
-  searchParams?: TradesSearchParams | Promise<TradesSearchParams>;
+  searchParams?: Promise<TradesSearchParams>;
 }
 
 export default async function TradesPage({ searchParams }: TradesPageProps) {
