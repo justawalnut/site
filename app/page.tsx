@@ -149,6 +149,8 @@ const getHomeData = unstable_cache(async (): Promise<HomeData> => {
   tags: ["dashboard-home"],
 });
 
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   const data = await getHomeData();
   const liveStrategies = data.strategies.filter((s) => s.status === "live");

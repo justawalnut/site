@@ -9,6 +9,8 @@ import {
 import { NotesFeed } from "@/components/notes/notes-feed";
 import { NoteComposer } from "@/components/notes/note-composer";
 
+export const dynamic = 'force-dynamic';
+
 async function getNotesPageData() {
   const notes = await prisma.note.findMany({
     where: {
